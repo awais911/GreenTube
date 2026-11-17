@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#0a1f14" />
+<title>MyTube — Green Player</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0f0c; --bg-soft: #0f1713; --card: #131c17; --card-hover: #1a2620;
+    --green: #22c55e; --green-dark: #16a34a; --green-glow: rgba(34, 197, 94, 0.35);
+    --silver: #cbd5d1; --silver-dim: #8a9691; --border: #24302a;
+    --text: #e8f0ec; --text-dim: #9ba8a2; --radius: 14px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background: radial-gradient(ellipse at top, #0f1a14 0%, #070b09 60%);
+    color: var(--text); min-height: 100vh; padding-bottom: 90px; overflow-x: hidden;
+    animation: bodyFade 0.6s ease;
+  }
+  @keyframes bodyFade { from { opacity: 0; } to { opacity: 1; } }
+
+  /* Top Bar */
+  .topbar {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(10, 15, 12, 0.85); backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border); padding: 12px 16px;
+    display: flex; align-items: center; gap: 12px;
+    animation: slideDown 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  @keyframes slideDown { from { transform: translateY(-100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  .logo {
+    font-family: 'Poppins', sans-serif; font-weight: 800; font-size: 20px;
+    background: linear-gradient(135deg, var(--green) 0%, var(--silver) 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    white-space: nowrap; display: flex; align-items: center; gap: 8px;
+  }
+  .logo-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--green); box-shadow: 0 0 12px var(--green); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.3); opacity: 0.7; } }
+
+  /* Search */
+  .search-wrap { flex: 1; position: relative; max-width: 600px; margin: 0 auto; }
+  .search-box {
+    display: flex; align-items: center; gap: 8px; background: var(--card);
+    border: 1px solid var(--border); border-radius: 999px; padding: 8px 14px; transition: all 0.3s;
+  }
+  .search-box:focus-within { border-color: var(--green); box-shadow: 0 0 0 3px var(--green-glow); background: var(--card-hover); }
+  .search-box svg { width: 18px; height: 18px; stroke: var(--silver-dim); flex-shrink: 0; }
+  .search-box:focus-within svg { stroke: var(--green); }
+  .search-box input { flex: 1; background: transparent; border: none; outline: none; color: var(--text); font-size: 14.5px; font-family: inherit; font-weight: 500; }
+  .search-box input::placeholder { color: var(--silver-dim); }
+  .clear-btn { background: transparent; border: none; cursor: pointer; display: none; color: var(--silver-dim); }
+  .clear-btn.show { display: flex; }
+  .clear-btn:hover { color: var(--green); }
+
+  /* Suggestions Dropdown */
+  .suggestions {
+    position: absolute; top: calc(100% + 8px); left: 0; right: 0;
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    max-height: 0; opacity: 0; transform: translateY(-8px); pointer-events: none;
+    transition: all 0.25s; box-shadow: 0 20px 40px rgba(0,0,0,0.5); z-index: 60; overflow: hidden;
+  }
+  .suggestions.show { max-height: 400px; opacity: 1; transform: translateY(0); pointer-events: auto; overflow-y: auto; }
+  .suggestion-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; cursor: pointer; font-size: 14px; transition: background 0.15s; border-bottom: 1px solid rgba(255,255,255,0.03); }
+  .suggestion-item:hover, .suggestion-item.active { background: var(--card-hover); }
+  .suggestion-item svg { width: 16px; height: 16px; stroke: var(--silver-dim); }
+  .suggestion-item:hover svg { stroke: var(--green); }
+
+  /* Main Container & Player */
+  .container { max-width: 1000px; margin: 0 auto; padding: 16px; }
+  .player-wrap { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; border-radius: var(--radius); overflow: hidden; margin-bottom: 14px; border: 1px solid var(--border); box-shadow: 0 8px 32px rgba(0,0,0,0.4); animation: fadeUp 0.5s ease; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+  .player-wrap iframe { width: 100%; height: 100%; border: 0; display: block; }
+  .player-placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 20px; text-align: center; background: linear-gradient(135deg, #0f1713, #070b09); }
+  .player-placeholder .big-icon { width: 64px; height: 64px; border-radius: 50%; background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); display: flex; align-items: center; justify-content: center; animation: float 3s infinite; }
+  @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+  .player-placeholder svg { width: 28px; height: 28px; fill: var(--green); }
+  .player-placeholder h2 { font-family: 'Poppins', sans-serif; font-size: 18px; color: var(--text); }
+  .player-placeholder p { font-size: 13px; color: var(--silver-dim); max-width: 320px; line-height: 1.5; }
+
+  /* Now Playing */
+  .now-playing { display: none; padding: 12px 4px; margin-bottom: 10px; }
+  .now-playing.show { display: block; animation: fadeUp 0.4s ease; }
+  .now-playing h3 { font-family: 'Poppins', sans-serif; font-size: 16px; margin-bottom: 4px; }
+  .now-playing .channel { font-size: 13px; color: var(--silver-dim); }
+
+  /* Actions */
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+  .action-btn { flex: 1; min-width: 140px; padding: 14px 18px; border-radius: 12px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.25s; }
+  .action-btn:hover { transform: translateY(-2px); border-color: var(--green); box-shadow: 0 8px 20px var(--green-glow); }
+  .action-btn svg { width: 18px; height: 18px; stroke: var(--green); fill: none; stroke-width: 2; }
+  .action-btn.primary { background: linear-gradient(135deg, var(--green), var(--green-dark)); border-color: var(--green); }
+  .action-btn.primary svg { stroke: var(--text); }
+
+  /* Download Dropdown */
+  .dropdown { position: relative; flex: 1; display: flex; }
+  .dropdown .action-btn { width: 100%; }
+  .dropdown-menu { position: absolute; top: calc(100% + 8px); left: 0; right: 0; background: var(--card); border: 1px solid var(--border); border-radius: 12px; z-index: 40; box-shadow: 0 16px 40px rgba(0,0,0,0.6); opacity: 0; transform: translateY(-8px) scale(0.98); pointer-events: none; transition: all 0.22s; }
+  .dropdown-menu.show { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+  .dropdown-menu .section-label { font-size: 11px; font-weight: 700; color: var(--green); padding: 10px 16px 6px; background: rgba(34,197,94,0.05); }
+  .dropdown-menu button { display: flex; justify-content: space-between; width: 100%; padding: 11px 16px; border: none; background: transparent; color: var(--text); cursor: pointer; font-size: 13.5px; transition: all 0.15s; border-bottom: 1px solid rgba(255,255,255,0.03); }
+  .dropdown-menu button:hover { background: var(--card-hover); color: var(--green); padding-left: 22px; }
+  .dropdown-menu button .size { font-size: 11px; color: var(--silver-dim); }
+
+  /* Video Grid */
+  .feed { margin-top: 20px; }
+  .feed-header { display: flex; justify-content: space-between; margin-bottom: 14px; }
+  .feed-title { font-family: 'Poppins', sans-serif; font-size: 17px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .feed-title .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .feed-refresh { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; color: var(--silver); cursor: pointer; }
+  .video-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+  .video-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; cursor: pointer; transition: all 0.3s; }
+  .video-card:hover { transform: translateY(-4px); border-color: var(--green); box-shadow: 0 12px 28px rgba(34,197,94,0.15); }
+  .video-card .thumb { position: relative; aspect-ratio: 16/9; background: #000; }
+  .video-card .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .video-card .info { padding: 10px 12px 12px; }
+  .video-card .info h4 { font-size: 13.5px; line-height: 1.4; margin-bottom: 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .video-card .info .meta { font-size: 11.5px; color: var(--silver-dim); }
+
+  /* Note & BG Bar */
+  .note { margin-top: 20px; font-size: 12.5px; color: var(--silver-dim); padding: 14px 16px; background: rgba(34,197,94,0.06); border-left: 3px solid var(--green); border-radius: 10px; }
+  .bg-bar { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(15, 23, 19, 0.95); border-top: 1px solid var(--green); padding: 10px 16px; display: flex; align-items: center; gap: 12px; z-index: 100; transform: translateY(100%); transition: transform 0.4s; }
+  .bg-bar.show { transform: translateY(0); }
+  .bg-bar .title { flex: 1; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bg-bar button { padding: 8px 16px; border-radius: 8px; border: none; background: rgba(239, 68, 68, 0.15); color: #ef4444; font-weight: 600; cursor: pointer; }
+
+  @media (max-width: 600px) { .logo span { display: none; } .video-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="logo"><div class="logo-dot"></div>MyTube<span>&nbsp;Green</span></div>
+  <div class="search-wrap">
+    <div class="search-box">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      <input id="searchInput" type="text" placeholder="Search videos..." autocomplete="off" />
+      <button class="clear-btn" id="clearBtn"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+    </div>
+    <div class="suggestions" id="suggestions"></div>
+  </div>
+</header>
+
+<main class="container">
+  <div class="player-wrap" id="playerWrap">
+    <div class="player-placeholder" id="placeholder">
+      <div class="big-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+      <h2>Welcome to MyTube Green</h2>
+      <p>Search karo ya neeche se koi video choose karo. Video play karo, download karo, background audio enjoy karo.</p>
+    </div>
+    <iframe id="player" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen style="display:none"></iframe>
+  </div>
+
+  <div class="now-playing" id="nowPlaying">
+    <h3 id="npTitle">—</h3>
+    <div class="channel" id="npChannel">—</div>
+  </div>
+
+  <div class="actions">
+    <div class="dropdown">
+      <button class="action-btn primary" id="downloadBtn">
+        <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span>Download</span>
+      </button>
+      <div class="dropdown-menu" id="downloadMenu">
+        <div class="section-label">Video — MP4</div>
+        <button data-type="video" data-quality="360p">360p <span class="size">~15 MB</span></button>
+        <button data-type="video" data-quality="720p">720p HD <span class="size">~40 MB</span></button>
+        <button data-type="video" data-quality="1080p">1080p HD <span class="size">~90 MB</span></button>
+        <div class="section-label">Audio — MP3</div>
+        <button data-type="audio" data-quality="128kbps">128 kbps <span class="size">~4 MB</span></button>
+      </div>
+    </div>
+    <button class="action-btn" id="bgBtn">
+      <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+      <span>BG Play</span>
+    </button>
+  </div>
+
+  <section class="feed">
+    <div class="feed-header">
+      <div class="feed-title"><div class="dot"></div><span id="feedTitle">Trending Now</span></div>
+      <button class="feed-refresh" id="refreshBtn">Refresh ⟳</button>
+    </div>
+    <div class="video-grid" id="videoGrid"></div>
+  </section>
+
+  <div class="note">
+    <b>Phase 1:</b> Search suggestions live hain, videos load hote hain. Real download aur background audio ke liye <b>Phase 2</b> mein backend connect hoga.
+  </div>
+</main>
+
+<audio id="bgAudio" preload="none"></audio>
+<div class="bg-bar" id="bgBar">
+  <div class="title" id="bgTitle">Background audio chal raha hai…</div>
+  <button id="bgStop">Stop</button>
+</div>
+
+<script>
+/* ---------- INLINE PWA MANIFEST ---------- */
+(function injectManifest() {
+  const manifest = {
+    name: "MyTube Green", short_name: "MyTube", start_url: "./", display: "standalone",
+    background_color: "#0a0f0c", theme_color: "#22c55e",
+    icons: [
+      { src: "data:image/svg+xml;base64," + btoa('<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192"><rect width="192" height="192" rx="40" fill="#0a0f0c"/><circle cx="96" cy="96" r="56" fill="#22c55e"/><polygon points="82,68 82,124 128,96" fill="#0a0f0c"/></svg>'), sizes: "192x192", type: "image/svg+xml" }
+    ]
+  };
+  const blob = new Blob([JSON.stringify(manifest)], { type: "application/manifest+json" });
+  const link = document.createElement("link"); link.rel = "manifest"; link.href = URL.createObjectURL(blob);
+  document.head.appendChild(link);
+})();
+
+/* ---------- DOM REFS ---------- */
+const searchInput = document.getElementById('searchInput');
+const clearBtn = document.getElementById('clearBtn');
+const suggestionsEl = document.getElementById('suggestions');
+const player = document.getElementById('player');
+const placeholder = document.getElementById('placeholder');
+const nowPlaying = document.getElementById('nowPlaying');
+const npTitle = document.getElementById('npTitle');
+const npChannel = document.getElementById('npChannel');
+const downloadBtn = document.getElementById('downloadBtn');
+const downloadMenu = document.getElementById('downloadMenu');
+const bgBtn = document.getElementById('bgBtn');
+const videoGrid = document.getElementById('videoGrid');
+const feedTitle = document.getElementById('feedTitle');
+const refreshBtn = document.getElementById('refreshBtn');
+const bgBar = document.getElementById('bgBar');
+const bgTitle = document.getElementById('bgTitle');
+const bgStop = document.getElementById('bgStop');
+
+let currentVideoId = null;
+let suggestTimer = null;
+
+/* ---------- YOUTUBE HELPERS ---------- */
+function extractVideoId(input) {
+  input = (input || '').trim();
+  if (!input) return null;
+  if (/^[a-zA-Z0-9_-]{11}$/.test(input)) return input;
+  try {
+    const url = new URL(input);
+    if (url.hostname.includes('youtu.be')) return url.pathname.slice(1).split('?')[0];
+    if (url.hostname.includes('youtube.com')) {
+      if (url.pathname === '/watch') return url.searchParams.get('v');
+      if (url.pathname.startsWith('/shorts/')) return url.pathname.split('/')[2];
+    }
+  } catch (e) {}
+  return null;
+}
+
+/* ---------- JSONP FETCHER (Bypasses CORS) ---------- */
+function jsonp(url) {
+  return new Promise((resolve, reject) => {
+    const callbackName = 'ytSuggest_' + Math.round(1000000 * Math.random());
+    window[callbackName] = (data) => {
+      delete window[callbackName];
+      document.body.removeChild(script);
+      resolve(data);
+    };
+    const script = document.createElement('script');
+    script.src = url.replace('callback=?', 'callback=' + callbackName);
+    script.onerror = () => {
+      delete window[callbackName];
+      document.body.removeChild(script);
+      reject(new Error('JSONP error'));
+    };
+    document.body.appendChild(script);
+  });
+}
+
+/* ---------- SEARCH SUGGESTIONS ---------- */
+async function fetchSuggestions(query) {
+  if (!query.trim()) { hideSuggestions(); return; }
+  try {
+    const url = `https://suggestqueries.google.com/complete/search?client=youtube&ds=yt&q=${encodeURIComponent(query)}&callback=?`;
+    const data = await jsonp(url);
+    const list = (data && data[1]) ? data[1].map(item => item[0]) : [];
+    renderSuggestions(list, query);
+  } catch (e) {
+    console.warn('Suggestion fetch failed', e);
+    hideSuggestions();
+  }
+}
+
+function renderSuggestions(list, query) {
+  if (!list.length) { hideSuggestions(); return; }
+  suggestionsEl.innerHTML = '';
+  list.slice(0, 8).forEach(text => {
+    const item = document.createElement('div');
+    item.className = 'suggestion-item';
+    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    const highlighted = text.replace(regex, '<b>$1</b>');
+    item.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg><span class="text">${highlighted}</span>`;
+    item.addEventListener('click', () => {
+      searchInput.value = text;
+      hideSuggestions();
+      performSearch(text);
+    });
+    suggestionsEl.appendChild(item);
+  });
+  suggestionsEl.classList.add('show');
+}
+
+function hideSuggestions() {
+  suggestionsEl.classList.remove('show');
+}
+
+/* ---------- SEARCH / FEED FETCHING ---------- */
+function performSearch(query) {
+  feedTitle.textContent = `Search: ${query}`;
+  loadFeed(query);
+}
+
+async function loadFeed(query = '') {
+  videoGrid.innerHTML = '<div style="padding:20px; text-align:center; color:#22c55e;">Loading videos...</div>';
+  
+  // Agar user ne URL/ID diya hai to direct play karo
+  const vidId = extractVideoId(query);
+  if (vidId) {
+    playVideo(vidId, 'Direct Video', 'Unknown');
+    return;
+  }
+
+  try {
+    // Piped API (YouTube ka open source frontend, CORS allow karta hai)
+    let apiUrl = 'https://pipedapi.kavin.rocks/trending?region=PK';
+    if (query) {
+      apiUrl = `https://pipedapi.kavin.rocks/search?q=${encodeURIComponent(query)}&filter=videos`;
+    }
+    
+    const res = await fetch(apiUrl);
+    if (!res.ok) throw new Error('API error');
+    const data = await res.json();
+    const items = data.items || data;
+    
+    videoGrid.innerHTML = '';
+    items.forEach(item => {
+      // Video ID extract karein
+      const vId = item.url ? item.url.split('v=')[1] : '';
+      if (!vId) return;
+
+      const card = document.createElement('div');
+      card.className = 'video-card';
+      card.innerHTML = `
+        <div class="thumb"><img src="${item.thumbnail}" loading="lazy" alt="thumb"></div>
+        <div class="info">
+          <h4>${item.title}</h4>
+          <div class="meta">
+            <span>${item.uploaderName || 'Unknown'}</span>
+            <span>${item.views ? (item.views).toLocaleString() + ' views' : ''}</span>
+          </div>
+        </div>
+      `;
+      card.addEventListener('click', () => {
+        playVideo(vId, item.title, item.uploaderName);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+      videoGrid.appendChild(card);
+    });
+  } catch (e) {
+    console.warn('Feed error:', e);
+    videoGrid.innerHTML = '<div style="padding:20px; color:#ef4444;">Videos load nahi ho sakeen. Internet check karein ya baad mein try karein.</div>';
+  }
+}
+
+/* ---------- VIDEO PLAYER ---------- */
+function playVideo(id, title, channel) {
+  currentVideoId = id;
+  placeholder.style.display = 'none';
+  player.style.display = 'block';
+  player.src = `https://www.youtube.com/embed/${id}?autoplay=1&rel=0&modestbranding=1`;
+  
+  nowPlaying.classList.add('show');
+  npTitle.textContent = title;
+  npChannel.textContent = channel;
+}
+
+/* ---------- EVENT LISTENERS ---------- */
+searchInput.addEventListener('input', (e) => {
+  const val = e.target.value;
+  clearBtn.classList.toggle('show', val.length > 0);
+  clearTimeout(suggestTimer);
+  if (val.trim()) suggestTimer = setTimeout(() => fetchSuggestions(val), 300);
+  else hideSuggestions();
+});
+
+searchInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    const val = searchInput.value.trim();
+    if (val) { hideSuggestions(); searchInput.blur(); performSearch(val); }
+  }
+});
+
+clearBtn.addEventListener('click', () => {
+  searchInput.value = '';
+  clearBtn.classList.remove('show');
+  hideSuggestions();
+  feedTitle.textContent = 'Trending Now';
+  loadFeed();
+});
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.search-wrap')) hideSuggestions();
+});
+
+refreshBtn.addEventListener('click', () => loadFeed(searchInput.value));
+
+// Download Dropdown
+downloadBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  downloadMenu.classList.toggle('show');
+});
+document.addEventListener('click', () => downloadMenu.classList.remove('show'));
+
+document.querySelectorAll('.dropdown-menu button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (!currentVideoId) { alert('Pehle koi video load karo'); return; }
+    alert(`Phase 2 mein real download connect hoga.\nVideo ID: ${currentVideoId}\nQuality: ${btn.dataset.quality}`);
+  });
+});
+
+// BG Play
+bgBtn.addEventListener('click', () => {
+  if (!currentVideoId) { alert('Pehle koi video play karo'); return; }
+  alert('Phase 2 mein background audio connect hoga.');
+});
+bgStop.addEventListener('click', () => bgBar.classList.remove('show'));
+
+/* ---------- INIT ---------- */
+loadFeed(); // App khulte hi trending videos load karo
+</script>
+</body>
+</html>
