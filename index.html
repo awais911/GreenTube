@@ -190,7 +190,7 @@
   </section>
 
   <div class="note">
-    <b>Phase 1:</b> Search aur Feed ab direct YouTube scraping se chalenge.
+    <b>Phase 1:</b> Search aur Feed ab direct API (Invidious Fallbacks) se chalenge.
   </div>
 </main>
 
@@ -236,7 +236,7 @@ const bgStop = document.getElementById('bgStop');
 let currentVideoId = null;
 let suggestTimer = null;
 
-/* ---------- JSONP FETCHER ---------- */
+/* ---------- JSONP FETCHER (For Search Suggestions) ---------- */
 function jsonp(url) {
   return new Promise((resolve, reject) => {
     const cbName = 'jsonp_' + Math.round(1000000 * Math.random());
@@ -305,28 +305,7 @@ function extractVideoId(input) {
   return null;
 }
 
-/* ---------- SMART PROXY FETCHER ---------- */
-async function fetchWithProxy(targetUrl) {
-  const proxies = [
-    `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`,
-    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`,
-    `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`
-  ];
-  for (let p of proxies) {
-    try {
-      const res = await fetch(p);
-      if (!res.ok) continue;
-      if (p.includes('allorigins')) {
-        const data = await res.json();
-        return data.contents;
-      }
-      return await res.text();
-    } catch (e) { console.warn('Proxy failed:', p); }
-  }
-  throw new Error("All proxies failed");
-}
-
-/* ---------- SEARCH & FEED FETCHING (Direct Scraping) ---------- */
+/* ---------- SEARCH & FEED FETCHING (Invidious Fallbacks & CORS Proxies) ---------- */
 function performSearch(query) {
   feedTitle.textContent = `Search: ${query}`;
   loadFeed(query);
@@ -342,50 +321,89 @@ async function loadFeed(query = '') {
   }
 
   try {
-    let targetUrl = 'https://www.youtube.com/results?search_query=trending+videos';
-    if (query) {
-      targetUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
-    }
-
-    // Proxy ke zariye YouTube ka HTML fetch karo
-    const html = await fetchWithProxy(targetUrl);
-
-    // YouTube ke HTML se JSON data (ytInitialData) nikalna
-    const match = html.match(/var ytInitialData = (\{.*?\});<\/script>/);
-    if (!match) throw new Error("Data extraction failed");
-
-    const json = JSON.parse(match[1]);
-    
-    // Nested JSON mein videos dhundna (YouTube ka complex structure)
     let items = [];
-    function findVideos(obj) {
-      if (!obj || typeof obj !== 'object') return;
-      if (obj.videoRenderer) {
-        const v = obj.videoRenderer;
-        items.push({
-          id: v.videoId,
-          title: v.title.runs[0].text,
-          author: v.ownerText.runs[0].text,
-          thumb: v.thumbnail.thumbnails.pop().url,
-          views: v.viewCountText ? v.viewCountText.simpleText : (v.shortViewCountText?.simpleText || '')
-        });
-      }
-      for (let key in obj) {
-        if (typeof obj[key] === 'object') findVideos(obj[key]);
+    
+    // 1. Try Official Invidious API directly
+    const instances = [
+      'https://inv.nadeko.net',
+      'https://invidious.nerdvpn.de',
+      'https://iv.melmac.space'
+    ];
+
+    let success = false;
+    for (let base of instances) {
+      try {
+        let apiUrl = query 
+          ? `${base}/api/v1/search?q=${encodeURIComponent(query)}&type=video`
+          : `${base}/api/v1/trending?region=PK`;
+        
+        const res = await fetch(apiUrl);
+        if (!res.ok) continue;
+        const data = await res.json();
+        
+        if (Array.isArray(data) && data.length > 0) {
+          data.forEach(item => {
+            if (item.type === 'video' || item.videoId) {
+              items.push({
+                id: item.videoId,
+                title: item.title,
+                author: item.author,
+                thumb: (item.videoThumbnails && item.videoThumbnails.length > 0) ? item.videoThumbnails[0].url : `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`,
+                views: (item.viewCount || 0).toString()
+              });
+            }
+          });
+          success = true;
+          break;
+        }
+      } catch (e) {
+        console.warn(`Instance ${base} failed. Trying next...`);
       }
     }
-    findVideos(json);
 
-    // Duplicates remove karo aur 20 tak limit karo
-    items = items.filter((v, i, self) => self.findIndex(t => t.id === v.id) === i).slice(0, 20);
+    // 2. Agar Invidious fail ho jaye, to CorsProxy use karo
+    if (!success) {
+      let targetUrl = query 
+        ? `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`
+        : `https://www.youtube.com/feed/trending`;
+        
+      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+      const res = await fetch(proxyUrl);
+      const html = await res.text();
+      
+      // Extract JSON from YouTube HTML
+      const match = html.match(/var ytInitialData = (\{.*?\});<\/script>/);
+      if (match) {
+        const json = JSON.parse(match[1]);
+        function findVideos(obj) {
+          if (!obj || typeof obj !== 'object') return;
+          if (obj.videoRenderer) {
+            const v = obj.videoRenderer;
+            items.push({
+              id: v.videoId,
+              title: v.title.runs[0].text,
+              author: v.ownerText.runs[0].text,
+              thumb: v.thumbnail.thumbnails.pop().url,
+              views: v.viewCountText ? v.viewCountText.simpleText : (v.shortViewCountText?.simpleText || '')
+            });
+          }
+          for (let key in obj) {
+            if (typeof obj[key] === 'object') findVideos(obj[key]);
+          }
+        }
+        findVideos(json);
+        success = true;
+      }
+    }
+
+    if (!success || items.length === 0) throw new Error("Failed to load videos");
+
+    // Filter duplicates
+    items = items.filter((v, i, self) => self.findIndex(t => t.id === v.id) === i).slice(0, 24);
 
     videoGrid.innerHTML = '';
-    if (items.length === 0) {
-      videoGrid.innerHTML = '<div style="padding:20px; color:#ef4444;">Koi video nahi mili. Kuch aur search karein.</div>';
-      return;
-    }
-
     items.forEach(item => {
+      if (!item.id) return;
       const card = document.createElement('div');
       card.className = 'video-card';
       card.innerHTML = `
@@ -394,7 +412,7 @@ async function loadFeed(query = '') {
           <h4>${item.title}</h4>
           <div class="meta">
             <span>${item.author}</span>
-            <span>${item.views}</span>
+            <span>${parseInt(item.views).toLocaleString()} views</span>
           </div>
         </div>
       `;
@@ -407,7 +425,7 @@ async function loadFeed(query = '') {
 
   } catch (err) {
     console.warn('Feed error:', err);
-    videoGrid.innerHTML = '<div style="padding:20px; color:#ef4444;">Videos load nahi ho sakeen. Proxies down hain ya internet slow hai.</div>';
+    videoGrid.innerHTML = '<div style="padding:20px; color:#ef4444;">Videos load nahi ho sakeen. All servers are down.</div>';
   }
 }
 
