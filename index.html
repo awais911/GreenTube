@@ -190,7 +190,7 @@
   </section>
 
   <div class="note">
-    <b>Phase 1:</b> Search aur Feed ab bilkul theek chalenge.
+    <b>Phase 1:</b> Search aur Feed ab bilkul theek chalenge. Invidious fallbacks active hain.
   </div>
 </main>
 
@@ -305,7 +305,7 @@ function extractVideoId(input) {
   return null;
 }
 
-/* ---------- SEARCH & FEED FETCHING ---------- */
+/* ---------- SEARCH & FEED FETCHING (AllOrigins + Invidious Backups) ---------- */
 function performSearch(query) {
   feedTitle.textContent = `Search: ${query}`;
   loadFeed(query);
@@ -324,17 +324,17 @@ async function loadFeed(query = '') {
     let items = [];
     
     if (!query) {
-      // DEFAULT FEED: YouTube Trending RSS (Always Works, No API Key)
+      // DEFAULT FEED: YouTube Trending RSS (AllOrigins Proxy)
       const rssUrl = 'https://www.youtube.com/feeds/videos.xml?playlist_id=PLrEnWoR732-BHrPp_Pm8_VleD68f9s14-';
       const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(rssUrl)}`;
       
       const res = await fetch(proxyUrl);
+      if (!res.ok) throw new Error("Proxy failed");
       const data = await res.json();
       const parser = new DOMParser();
       const xml = parser.parseFromString(data.contents, 'text/xml');
-      const entries = xml.querySelectorAll('entry');
       
-      entries.forEach(entry => {
+      xml.querySelectorAll('entry').forEach(entry => {
         items.push({
           id: entry.querySelector('yt\\:videoId')?.textContent,
           title: entry.querySelector('title').textContent,
@@ -345,23 +345,42 @@ async function loadFeed(query = '') {
       });
 
     } else {
-      // SEARCH: Invidious API (Open-Source YouTube API) for Search
-      // Agar ye API down ho toh hum dusra instance use karenge
-      const apiUrl = `https://inv.nadeko.net/api/v1/search?q=${encodeURIComponent(query)}&type=video`;
-      const res = await fetch(apiUrl);
-      const data = await res.json();
+      // SEARCH: Invidious API (Multiple Backups)
+      const invidiousInstances = [
+        'https://inv.nadeko.net',
+        'https://invidious.nerdvpn.de',
+        'https://iv.melmac.space'
+      ];
       
-      data.forEach(item => {
-        if (item.type === 'video') {
-          items.push({
-            id: item.videoId,
-            title: item.title,
-            author: item.author,
-            thumb: item.videoThumbnails[0].url,
-            views: item.viewCount.toString()
-          });
+      let searchSuccess = false;
+      for (let base of invidiousInstances) {
+        try {
+          const apiUrl = `${base}/api/v1/search?q=${encodeURIComponent(query)}&type=video`;
+          const res = await fetch(apiUrl);
+          if (!res.ok) continue;
+          
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            data.forEach(item => {
+              if (item.type === 'video') {
+                items.push({
+                  id: item.videoId,
+                  title: item.title,
+                  author: item.author,
+                  thumb: item.videoThumbnails[0].url,
+                  views: item.viewCount.toString()
+                });
+              }
+            });
+            searchSuccess = true;
+            break; // Agar mil gaya toh loop break
+          }
+        } catch (e) {
+          console.warn(`Invidious instance ${base} failed.`);
         }
-      });
+      }
+      
+      if (!searchSuccess) throw new Error("All Invidious instances failed");
     }
 
     // Render Grid
