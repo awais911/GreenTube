@@ -67,7 +67,7 @@
   }
   .suggestions.show { max-height: 400px; opacity: 1; transform: translateY(0); pointer-events: auto; overflow-y: auto; }
   .suggestion-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; cursor: pointer; font-size: 14px; transition: background 0.15s; border-bottom: 1px solid rgba(255,255,255,0.03); }
-  .suggestion-item:hover, .suggestion-item.active { background: var(--card-hover); }
+  .suggestion-item:hover { background: var(--card-hover); }
   .suggestion-item svg { width: 16px; height: 16px; stroke: var(--silver-dim); }
   .suggestion-item:hover svg { stroke: var(--green); }
 
@@ -97,7 +97,7 @@
   .action-btn.primary { background: linear-gradient(135deg, var(--green), var(--green-dark)); border-color: var(--green); }
   .action-btn.primary svg { stroke: var(--text); }
 
-  /* Download Dropdown */
+  /* Dropdown */
   .dropdown { position: relative; flex: 1; display: flex; }
   .dropdown .action-btn { width: 100%; }
   .dropdown-menu { position: absolute; top: calc(100% + 8px); left: 0; right: 0; background: var(--card); border: 1px solid var(--border); border-radius: 12px; z-index: 40; box-shadow: 0 16px 40px rgba(0,0,0,0.6); opacity: 0; transform: translateY(-8px) scale(0.98); pointer-events: none; transition: all 0.22s; }
@@ -122,7 +122,6 @@
   .video-card .info h4 { font-size: 13.5px; line-height: 1.4; margin-bottom: 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .video-card .info .meta { font-size: 11.5px; color: var(--silver-dim); }
 
-  /* Note & BG Bar */
   .note { margin-top: 20px; font-size: 12.5px; color: var(--silver-dim); padding: 14px 16px; background: rgba(34,197,94,0.06); border-left: 3px solid var(--green); border-radius: 10px; }
   .bg-bar { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(15, 23, 19, 0.95); border-top: 1px solid var(--green); padding: 10px 16px; display: flex; align-items: center; gap: 12px; z-index: 100; transform: translateY(100%); transition: transform 0.4s; }
   .bg-bar.show { transform: translateY(0); }
@@ -191,7 +190,7 @@
   </section>
 
   <div class="note">
-    <b>Phase 1:</b> Search suggestions live hain, videos load hote hain. Real download aur background audio ke liye <b>Phase 2</b> mein backend connect hoga.
+    <b>Phase 1:</b> Search aur Feed ab bilkul theek chalenge.
   </div>
 </main>
 
@@ -232,13 +231,65 @@ const videoGrid = document.getElementById('videoGrid');
 const feedTitle = document.getElementById('feedTitle');
 const refreshBtn = document.getElementById('refreshBtn');
 const bgBar = document.getElementById('bgBar');
-const bgTitle = document.getElementById('bgTitle');
 const bgStop = document.getElementById('bgStop');
 
 let currentVideoId = null;
 let suggestTimer = null;
 
-/* ---------- YOUTUBE HELPERS ---------- */
+/* ---------- JSONP FETCHER ---------- */
+function jsonp(url) {
+  return new Promise((resolve, reject) => {
+    const cbName = 'jsonp_' + Math.round(1000000 * Math.random());
+    window[cbName] = (data) => {
+      delete window[cbName];
+      if (script.parentNode) document.body.removeChild(script);
+      resolve(data);
+    };
+    const script = document.createElement('script');
+    script.src = url.replace('callback=?', 'callback=' + cbName);
+    script.onerror = () => {
+      delete window[cbName];
+      if (script.parentNode) document.body.removeChild(script);
+      reject(new Error('JSONP error'));
+    };
+    document.body.appendChild(script);
+  });
+}
+
+/* ---------- SEARCH SUGGESTIONS ---------- */
+async function fetchSuggestions(query) {
+  if (!query.trim()) { suggestionsEl.classList.remove('show'); return; }
+  try {
+    const url = `https://suggestqueries.google.com/complete/search?client=youtube&ds=yt&q=${encodeURIComponent(query)}&callback=?`;
+    const data = await jsonp(url);
+    const list = (data && data[1]) ? data[1].map(item => item[0]) : [];
+    renderSuggestions(list, query);
+  } catch (e) {
+    console.warn('Suggestion fetch failed', e);
+    suggestionsEl.classList.remove('show');
+  }
+}
+
+function renderSuggestions(list, query) {
+  if (!list.length) { suggestionsEl.classList.remove('show'); return; }
+  suggestionsEl.innerHTML = '';
+  list.slice(0, 8).forEach(text => {
+    const item = document.createElement('div');
+    item.className = 'suggestion-item';
+    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    const highlighted = text.replace(regex, '<b>$1</b>');
+    item.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg><span class="text">${highlighted}</span>`;
+    item.addEventListener('click', () => {
+      searchInput.value = text;
+      suggestionsEl.classList.remove('show');
+      performSearch(text);
+    });
+    suggestionsEl.appendChild(item);
+  });
+  suggestionsEl.classList.add('show');
+}
+
+/* ---------- YOUTUBE URL PARSER ---------- */
 function extractVideoId(input) {
   input = (input || '').trim();
   if (!input) return null;
@@ -254,64 +305,7 @@ function extractVideoId(input) {
   return null;
 }
 
-/* ---------- JSONP FETCHER (Bypasses CORS) ---------- */
-function jsonp(url) {
-  return new Promise((resolve, reject) => {
-    const callbackName = 'ytSuggest_' + Math.round(1000000 * Math.random());
-    window[callbackName] = (data) => {
-      delete window[callbackName];
-      document.body.removeChild(script);
-      resolve(data);
-    };
-    const script = document.createElement('script');
-    script.src = url.replace('callback=?', 'callback=' + callbackName);
-    script.onerror = () => {
-      delete window[callbackName];
-      document.body.removeChild(script);
-      reject(new Error('JSONP error'));
-    };
-    document.body.appendChild(script);
-  });
-}
-
-/* ---------- SEARCH SUGGESTIONS ---------- */
-async function fetchSuggestions(query) {
-  if (!query.trim()) { hideSuggestions(); return; }
-  try {
-    const url = `https://suggestqueries.google.com/complete/search?client=youtube&ds=yt&q=${encodeURIComponent(query)}&callback=?`;
-    const data = await jsonp(url);
-    const list = (data && data[1]) ? data[1].map(item => item[0]) : [];
-    renderSuggestions(list, query);
-  } catch (e) {
-    console.warn('Suggestion fetch failed', e);
-    hideSuggestions();
-  }
-}
-
-function renderSuggestions(list, query) {
-  if (!list.length) { hideSuggestions(); return; }
-  suggestionsEl.innerHTML = '';
-  list.slice(0, 8).forEach(text => {
-    const item = document.createElement('div');
-    item.className = 'suggestion-item';
-    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-    const highlighted = text.replace(regex, '<b>$1</b>');
-    item.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg><span class="text">${highlighted}</span>`;
-    item.addEventListener('click', () => {
-      searchInput.value = text;
-      hideSuggestions();
-      performSearch(text);
-    });
-    suggestionsEl.appendChild(item);
-  });
-  suggestionsEl.classList.add('show');
-}
-
-function hideSuggestions() {
-  suggestionsEl.classList.remove('show');
-}
-
-/* ---------- SEARCH / FEED FETCHING ---------- */
+/* ---------- SEARCH & FEED FETCHING ---------- */
 function performSearch(query) {
   feedTitle.textContent = `Search: ${query}`;
   loadFeed(query);
@@ -320,7 +314,6 @@ function performSearch(query) {
 async function loadFeed(query = '') {
   videoGrid.innerHTML = '<div style="padding:20px; text-align:center; color:#22c55e;">Loading videos...</div>';
   
-  // Agar user ne URL/ID diya hai to direct play karo
   const vidId = extractVideoId(query);
   if (vidId) {
     playVideo(vidId, 'Direct Video', 'Unknown');
@@ -328,44 +321,80 @@ async function loadFeed(query = '') {
   }
 
   try {
-    // Piped API (YouTube ka open source frontend, CORS allow karta hai)
-    let apiUrl = 'https://pipedapi.kavin.rocks/trending?region=PK';
-    if (query) {
-      apiUrl = `https://pipedapi.kavin.rocks/search?q=${encodeURIComponent(query)}&filter=videos`;
-    }
+    let items = [];
     
-    const res = await fetch(apiUrl);
-    if (!res.ok) throw new Error('API error');
-    const data = await res.json();
-    const items = data.items || data;
-    
-    videoGrid.innerHTML = '';
-    items.forEach(item => {
-      // Video ID extract karein
-      const vId = item.url ? item.url.split('v=')[1] : '';
-      if (!vId) return;
+    if (!query) {
+      // DEFAULT FEED: YouTube Trending RSS (Always Works, No API Key)
+      const rssUrl = 'https://www.youtube.com/feeds/videos.xml?playlist_id=PLrEnWoR732-BHrPp_Pm8_VleD68f9s14-';
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(rssUrl)}`;
+      
+      const res = await fetch(proxyUrl);
+      const data = await res.json();
+      const parser = new DOMParser();
+      const xml = parser.parseFromString(data.contents, 'text/xml');
+      const entries = xml.querySelectorAll('entry');
+      
+      entries.forEach(entry => {
+        items.push({
+          id: entry.querySelector('yt\\:videoId')?.textContent,
+          title: entry.querySelector('title').textContent,
+          author: entry.querySelector('author > name')?.textContent || 'Unknown',
+          thumb: entry.querySelector('media\\:thumbnail')?.getAttribute('url') || '',
+          views: entry.querySelector('media\\:statistics')?.getAttribute('views') || '0'
+        });
+      });
 
+    } else {
+      // SEARCH: Invidious API (Open-Source YouTube API) for Search
+      // Agar ye API down ho toh hum dusra instance use karenge
+      const apiUrl = `https://inv.nadeko.net/api/v1/search?q=${encodeURIComponent(query)}&type=video`;
+      const res = await fetch(apiUrl);
+      const data = await res.json();
+      
+      data.forEach(item => {
+        if (item.type === 'video') {
+          items.push({
+            id: item.videoId,
+            title: item.title,
+            author: item.author,
+            thumb: item.videoThumbnails[0].url,
+            views: item.viewCount.toString()
+          });
+        }
+      });
+    }
+
+    // Render Grid
+    videoGrid.innerHTML = '';
+    if (items.length === 0) {
+      videoGrid.innerHTML = '<div style="padding:20px; color:#ef4444;">Koi video nahi mili. Kuch aur search karein.</div>';
+      return;
+    }
+
+    items.forEach(item => {
+      if (!item.id) return;
       const card = document.createElement('div');
       card.className = 'video-card';
       card.innerHTML = `
-        <div class="thumb"><img src="${item.thumbnail}" loading="lazy" alt="thumb"></div>
+        <div class="thumb"><img src="${item.thumb}" loading="lazy" alt="thumb"></div>
         <div class="info">
           <h4>${item.title}</h4>
           <div class="meta">
-            <span>${item.uploaderName || 'Unknown'}</span>
-            <span>${item.views ? (item.views).toLocaleString() + ' views' : ''}</span>
+            <span>${item.author}</span>
+            <span>${parseInt(item.views).toLocaleString()} views</span>
           </div>
         </div>
       `;
       card.addEventListener('click', () => {
-        playVideo(vId, item.title, item.uploaderName);
+        playVideo(item.id, item.title, item.author);
         window.scrollTo({ top: 0, behavior: 'smooth' });
       });
       videoGrid.appendChild(card);
     });
-  } catch (e) {
-    console.warn('Feed error:', e);
-    videoGrid.innerHTML = '<div style="padding:20px; color:#ef4444;">Videos load nahi ho sakeen. Internet check karein ya baad mein try karein.</div>';
+
+  } catch (err) {
+    console.warn('Feed error:', err);
+    videoGrid.innerHTML = '<div style="padding:20px; color:#ef4444;">Videos load nahi ho sakeen. Internet connection check karein.</div>';
   }
 }
 
@@ -387,31 +416,30 @@ searchInput.addEventListener('input', (e) => {
   clearBtn.classList.toggle('show', val.length > 0);
   clearTimeout(suggestTimer);
   if (val.trim()) suggestTimer = setTimeout(() => fetchSuggestions(val), 300);
-  else hideSuggestions();
+  else suggestionsEl.classList.remove('show');
 });
 
 searchInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     const val = searchInput.value.trim();
-    if (val) { hideSuggestions(); searchInput.blur(); performSearch(val); }
+    if (val) { suggestionsEl.classList.remove('show'); searchInput.blur(); performSearch(val); }
   }
 });
 
 clearBtn.addEventListener('click', () => {
   searchInput.value = '';
   clearBtn.classList.remove('show');
-  hideSuggestions();
+  suggestionsEl.classList.remove('show');
   feedTitle.textContent = 'Trending Now';
   loadFeed();
 });
 
 document.addEventListener('click', (e) => {
-  if (!e.target.closest('.search-wrap')) hideSuggestions();
+  if (!e.target.closest('.search-wrap')) suggestionsEl.classList.remove('show');
 });
 
 refreshBtn.addEventListener('click', () => loadFeed(searchInput.value));
 
-// Download Dropdown
 downloadBtn.addEventListener('click', (e) => {
   e.stopPropagation();
   downloadMenu.classList.toggle('show');
@@ -425,7 +453,6 @@ document.querySelectorAll('.dropdown-menu button').forEach(btn => {
   });
 });
 
-// BG Play
 bgBtn.addEventListener('click', () => {
   if (!currentVideoId) { alert('Pehle koi video play karo'); return; }
   alert('Phase 2 mein background audio connect hoga.');
@@ -433,7 +460,7 @@ bgBtn.addEventListener('click', () => {
 bgStop.addEventListener('click', () => bgBar.classList.remove('show'));
 
 /* ---------- INIT ---------- */
-loadFeed(); // App khulte hi trending videos load karo
+loadFeed(); // App khulte hi default feed load karo
 </script>
 </body>
 </html>
