@@ -190,7 +190,7 @@
   </section>
 
   <div class="note">
-    <b>Phase 1:</b> Search aur Feed ab bilkul theek chalenge. Invidious fallbacks active hain.
+    <b>Phase 1:</b> Search aur Feed ab direct YouTube scraping se chalenge.
   </div>
 </main>
 
@@ -305,7 +305,28 @@ function extractVideoId(input) {
   return null;
 }
 
-/* ---------- SEARCH & FEED FETCHING (AllOrigins + Invidious Backups) ---------- */
+/* ---------- SMART PROXY FETCHER ---------- */
+async function fetchWithProxy(targetUrl) {
+  const proxies = [
+    `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`,
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`,
+    `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`
+  ];
+  for (let p of proxies) {
+    try {
+      const res = await fetch(p);
+      if (!res.ok) continue;
+      if (p.includes('allorigins')) {
+        const data = await res.json();
+        return data.contents;
+      }
+      return await res.text();
+    } catch (e) { console.warn('Proxy failed:', p); }
+  }
+  throw new Error("All proxies failed");
+}
+
+/* ---------- SEARCH & FEED FETCHING (Direct Scraping) ---------- */
 function performSearch(query) {
   feedTitle.textContent = `Search: ${query}`;
   loadFeed(query);
@@ -321,69 +342,43 @@ async function loadFeed(query = '') {
   }
 
   try {
-    let items = [];
-    
-    if (!query) {
-      // DEFAULT FEED: YouTube Trending RSS (AllOrigins Proxy)
-      const rssUrl = 'https://www.youtube.com/feeds/videos.xml?playlist_id=PLrEnWoR732-BHrPp_Pm8_VleD68f9s14-';
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(rssUrl)}`;
-      
-      const res = await fetch(proxyUrl);
-      if (!res.ok) throw new Error("Proxy failed");
-      const data = await res.json();
-      const parser = new DOMParser();
-      const xml = parser.parseFromString(data.contents, 'text/xml');
-      
-      xml.querySelectorAll('entry').forEach(entry => {
-        items.push({
-          id: entry.querySelector('yt\\:videoId')?.textContent,
-          title: entry.querySelector('title').textContent,
-          author: entry.querySelector('author > name')?.textContent || 'Unknown',
-          thumb: entry.querySelector('media\\:thumbnail')?.getAttribute('url') || '',
-          views: entry.querySelector('media\\:statistics')?.getAttribute('views') || '0'
-        });
-      });
-
-    } else {
-      // SEARCH: Invidious API (Multiple Backups)
-      const invidiousInstances = [
-        'https://inv.nadeko.net',
-        'https://invidious.nerdvpn.de',
-        'https://iv.melmac.space'
-      ];
-      
-      let searchSuccess = false;
-      for (let base of invidiousInstances) {
-        try {
-          const apiUrl = `${base}/api/v1/search?q=${encodeURIComponent(query)}&type=video`;
-          const res = await fetch(apiUrl);
-          if (!res.ok) continue;
-          
-          const data = await res.json();
-          if (Array.isArray(data) && data.length > 0) {
-            data.forEach(item => {
-              if (item.type === 'video') {
-                items.push({
-                  id: item.videoId,
-                  title: item.title,
-                  author: item.author,
-                  thumb: item.videoThumbnails[0].url,
-                  views: item.viewCount.toString()
-                });
-              }
-            });
-            searchSuccess = true;
-            break; // Agar mil gaya toh loop break
-          }
-        } catch (e) {
-          console.warn(`Invidious instance ${base} failed.`);
-        }
-      }
-      
-      if (!searchSuccess) throw new Error("All Invidious instances failed");
+    let targetUrl = 'https://www.youtube.com/results?search_query=trending+videos';
+    if (query) {
+      targetUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
     }
 
-    // Render Grid
+    // Proxy ke zariye YouTube ka HTML fetch karo
+    const html = await fetchWithProxy(targetUrl);
+
+    // YouTube ke HTML se JSON data (ytInitialData) nikalna
+    const match = html.match(/var ytInitialData = (\{.*?\});<\/script>/);
+    if (!match) throw new Error("Data extraction failed");
+
+    const json = JSON.parse(match[1]);
+    
+    // Nested JSON mein videos dhundna (YouTube ka complex structure)
+    let items = [];
+    function findVideos(obj) {
+      if (!obj || typeof obj !== 'object') return;
+      if (obj.videoRenderer) {
+        const v = obj.videoRenderer;
+        items.push({
+          id: v.videoId,
+          title: v.title.runs[0].text,
+          author: v.ownerText.runs[0].text,
+          thumb: v.thumbnail.thumbnails.pop().url,
+          views: v.viewCountText ? v.viewCountText.simpleText : (v.shortViewCountText?.simpleText || '')
+        });
+      }
+      for (let key in obj) {
+        if (typeof obj[key] === 'object') findVideos(obj[key]);
+      }
+    }
+    findVideos(json);
+
+    // Duplicates remove karo aur 20 tak limit karo
+    items = items.filter((v, i, self) => self.findIndex(t => t.id === v.id) === i).slice(0, 20);
+
     videoGrid.innerHTML = '';
     if (items.length === 0) {
       videoGrid.innerHTML = '<div style="padding:20px; color:#ef4444;">Koi video nahi mili. Kuch aur search karein.</div>';
@@ -391,7 +386,6 @@ async function loadFeed(query = '') {
     }
 
     items.forEach(item => {
-      if (!item.id) return;
       const card = document.createElement('div');
       card.className = 'video-card';
       card.innerHTML = `
@@ -400,7 +394,7 @@ async function loadFeed(query = '') {
           <h4>${item.title}</h4>
           <div class="meta">
             <span>${item.author}</span>
-            <span>${parseInt(item.views).toLocaleString()} views</span>
+            <span>${item.views}</span>
           </div>
         </div>
       `;
@@ -413,7 +407,7 @@ async function loadFeed(query = '') {
 
   } catch (err) {
     console.warn('Feed error:', err);
-    videoGrid.innerHTML = '<div style="padding:20px; color:#ef4444;">Videos load nahi ho sakeen. Internet connection check karein.</div>';
+    videoGrid.innerHTML = '<div style="padding:20px; color:#ef4444;">Videos load nahi ho sakeen. Proxies down hain ya internet slow hai.</div>';
   }
 }
 
